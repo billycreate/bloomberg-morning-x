@@ -128,14 +128,20 @@ def openai_text(prompt):
             "max_output_tokens": 500,
         },
     )
+    if data.get("output_text"):
+        return data["output_text"].strip()
+
     chunks = []
     for item in data.get("output", []):
         for content in item.get("content", []):
-            if content.get("type") == "output_text":
+            if content.get("type") in {"output_text", "text"}:
                 chunks.append(content.get("text", ""))
     text = "".join(chunks).strip()
     if not text:
-        raise RuntimeError("OpenAI returned no text.")
+        raise RuntimeError(
+            "OpenAI returned no text. Response keys: "
+            + ", ".join(sorted(data.keys()))
+        )
     return text
 
 
@@ -169,7 +175,42 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
     if not post.startswith("【サラリーマン必見】"):
         post = "【サラリーマン必見】" + post
     if len(post) > 280:
-        raise RuntimeError(f"Generated post is too long: {len(post)} characters\n{post}")
+        shorten_prompt = f"""
+次のX投稿文を280文字以内に圧縮してください。
+
+必須条件:
+- 先頭は必ず「【サラリーマン必見】」
+- 番号付きニュース5項目は各20文字以内
+- 「↑↑〇〇」「↓↓〇〇」の2行を残す
+- 最後に記事URLを残す
+- 投稿文だけ返す
+
+記事URL:
+{article_url}
+
+元の投稿文:
+{post}
+""".strip()
+        post = openai_text(shorten_prompt).strip().strip('"').strip("'")
+        if article_url not in post:
+            post = post.rstrip() + "\n" + article_url
+        if not post.startswith("【サラリーマン必見】"):
+            post = "【サラリーマン必見】" + post
+    if len(post) > 280:
+        lines = post.splitlines()
+        url = article_url
+        body_lines = [line for line in lines if "bloomberg.com" not in line]
+        compact = []
+        for line in body_lines:
+            if re.match(r"^\d+\.", line):
+                compact.append(line[:22])
+            elif line.startswith(("↑↑", "↓↓")):
+                compact.append(line[:24])
+            elif line.startswith("【サラリーマン必見】"):
+                compact.append("【サラリーマン必見】")
+        post = "\n".join(compact + [url])
+    if len(post) > 280:
+        raise RuntimeError(f"Generated post is too long after shortening: {len(post)} characters\n{post}")
     return post
 
 
