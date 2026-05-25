@@ -65,6 +65,11 @@ def expand_url(url):
         return url
 
 
+def normalize_article_url(url):
+    parsed = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+
 def search_bloomberg_tweet():
     bearer = required_env("X_BEARER_TOKEN")
     query = '(from:BloombergJapan "今朝の5本") OR (from:BloombergJapan "今朝の５本") -is:retweet'
@@ -89,7 +94,7 @@ def search_bloomberg_tweet():
     for item in urls:
         candidate = item.get("unwound_url") or item.get("expanded_url") or item.get("url")
         if candidate:
-            return tweet, expand_url(candidate)
+            return tweet, normalize_article_url(expand_url(candidate))
     raise RuntimeError("Bloomberg tweet was found, but it had no URL entity.")
 
 
