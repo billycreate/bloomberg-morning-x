@@ -14,7 +14,7 @@ import urllib.request
 
 
 X_SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
-X_POST_URL = "https://api.x.com/2/tweets"
+X_POST_URL = "https://api.x.com/1.1/statuses/update.json"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5-mini"
 
@@ -125,7 +125,7 @@ def openai_text(prompt):
         OPENAI_RESPONSES_URL,
         headers={
             "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
         },
         data={
             "model": model,
@@ -219,8 +219,8 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
     return post
 
 
-def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret):
-    oauth = {
+def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret, params=None):
+    params = params or {}; oauth = {
         "oauth_consumer_key": consumer_key,
         "oauth_nonce": hashlib.sha1(str(random.random()).encode()).hexdigest(),
         "oauth_signature_method": "HMAC-SHA1",
@@ -228,7 +228,7 @@ def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret
         "oauth_token": token,
         "oauth_version": "1.0",
     }
-    params = "&".join(f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in sorted(oauth.items()))
+    params = "&".join(f"{urllib.parse.quote(str(k), safe='')}={urllib.parse.quote(str(v), safe='')}" for k, v in sorted({**params, **oauth}.items()))
     base = "&".join(urllib.parse.quote(x, safe="") for x in [method, url, params])
     key = "&".join(urllib.parse.quote(x, safe="") for x in [consumer_secret, token_secret])
     oauth["oauth_signature"] = base64.b64encode(
@@ -241,7 +241,7 @@ def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret
 
 
 def post_to_x(text):
-    body = json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")
+    body_params = {"status": text}; body = urllib.parse.urlencode(body_params).encode("utf-8")
     req = urllib.request.Request(
         X_POST_URL,
         data=body,
@@ -253,9 +253,9 @@ def post_to_x(text):
                 required_env("X_API_KEY"),
                 required_env("X_API_KEY_SECRET"),
                 required_env("X_ACCESS_TOKEN"),
-                required_env("X_ACCESS_TOKEN_SECRET"),
+                required_env("X_ACCESS_TOKEN_SECRET"), body_params,
             ),
-            "Content-Type": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
         },
     )
     try:
