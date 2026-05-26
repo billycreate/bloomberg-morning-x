@@ -228,7 +228,7 @@ def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret
         "oauth_token": token,
         "oauth_version": "1.0",
     }
-        params = "&".join(f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in sorted(oauth.items()))
+    params = "&".join(f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in sorted(oauth.items()))
     base = "&".join(urllib.parse.quote(x, safe="") for x in [method, url, params])
     key = "&".join(urllib.parse.quote(x, safe="") for x in [consumer_secret, token_secret])
     oauth["oauth_signature"] = base64.b64encode(
