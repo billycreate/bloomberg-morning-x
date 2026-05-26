@@ -125,7 +125,7 @@ def openai_text(prompt):
         OPENAI_RESPONSES_URL,
         headers={
             "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type": "application/json",
         },
         data={
             "model": model,
