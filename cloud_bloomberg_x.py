@@ -14,7 +14,7 @@ import urllib.request
 
 
 X_SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
-X_POST_URL = "https://api.twitter.com/1.1/statuses/update.json"
+X_POST_URL = "https://api.twitter.com/2/tweets"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5-mini"
 
@@ -241,7 +241,7 @@ def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret
 
 
 def post_to_x(text):
-    body_params = {"status": text}; body = urllib.parse.urlencode(body_params).encode("utf-8")
+    body = json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         X_POST_URL,
         data=body,
@@ -253,9 +253,9 @@ def post_to_x(text):
                 required_env("X_API_KEY"),
                 required_env("X_API_KEY_SECRET"),
                 required_env("X_ACCESS_TOKEN"),
-                required_env("X_ACCESS_TOKEN_SECRET"), body_params,
+                required_env("X_ACCESS_TOKEN_SECRET"),
             ),
-            "Content-Type": "application/x-www-form-urlencoded",
+            "Content-Type": "application/json",
         },
     )
     try:
