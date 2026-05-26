@@ -235,7 +235,7 @@ def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret
         hmac.new(key.encode(), base.encode(), hashlib.sha1).digest()
     ).decode()
     return "OAuth " + ", ".join(
-        f'{urllib.parse.quote(k)}="{urllib.parse.quote(v)}"'
+        f'{urllib.parse.quote(k)}="{urllib.parse.quote(v, safe="")}"'
         for k, v in sorted(oauth.items())
     )
 
