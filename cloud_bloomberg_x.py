@@ -14,7 +14,7 @@ import urllib.request
 
 
 X_SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
-X_POST_URL = "https://api.x.com/1.1/statuses/update.json"
+X_POST_URL = "https://api.twitter.com/1.1/statuses/update.json"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5-mini"
 
