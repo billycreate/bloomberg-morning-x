@@ -14,7 +14,7 @@ import urllib.request
 
 
 X_SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
-X_POST_URL = "https://api.twitter.com/2/tweets"
+X_POST_URL = "https://api.x.com/2/tweets"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5-mini"
 
@@ -247,7 +247,7 @@ def post_to_x(text):
         data=body,
         method="POST",
         headers={
-            "Authorization": oauth_header(
+            "Authorization": f"Bearer {os.environ.get('X_USER_ACCESS_TOKEN', '').strip()}" if os.environ.get("X_USER_ACCESS_TOKEN", "").strip() else oauth_header(def post_to_x(text):    body = json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")    user_token = os.environ.get("X_USER_ACCESS_TOKEN", "").strip()    if user_token:        req = urllib.request.Request(            X_POST_URL,            data=body,            method="POST",            headers={"Authorization": f"Bearer {user_token}", "Content-Type": "application/json"},        )        try:            with urllib.request.urlopen(req, timeout=45) as res:                print(res.read().decode("utf-8"))                return        except urllib.error.HTTPError as e:            detail = e.read().decode("utf-8", errors="replace")            raise RuntimeError(f"X post failed: HTTP {e.code}: {detail[:800]}") from e
                 "POST",
                 X_POST_URL,
                 required_env("X_API_KEY"),
