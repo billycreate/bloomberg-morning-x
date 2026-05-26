@@ -179,7 +179,7 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
         post = post.rstrip() + "\n" + article_url
     if not post.startswith("【サラリーマン必見】"):
         post = "【サラリーマン必見】" + post
-    if len(post) > 280:
+    if len(post) > 140:
         shorten_prompt = f"""
 次のX投稿文を280文字以内に圧縮してください。
 
@@ -201,7 +201,7 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
             post = post.rstrip() + "\n" + article_url
         if not post.startswith("【サラリーマン必見】"):
             post = "【サラリーマン必見】" + post
-    if len(post) > 280:
+    if len(post) > 140:
         lines = post.splitlines()
         url = article_url
         body_lines = [line for line in lines if "bloomberg.com" not in line]
@@ -214,7 +214,7 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
             elif line.startswith("【サラリーマン必見】"):
                 compact.append("【サラリーマン必見】")
         post = "\n".join(compact + [url])
-    if len(post) > 280:
+    if len(post) > 140:
         raise RuntimeError(f"Generated post is too long after shortening: {len(post)} characters\n{post}")
     return post
 
