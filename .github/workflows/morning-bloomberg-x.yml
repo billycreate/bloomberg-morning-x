@@ -2,8 +2,11 @@ name: Morning Bloomberg X
 
 on:
   schedule:
-    # 06:30 JST = 21:30 UTC on the previous day.
+    # Morning JST retries. The script skips when the article URL was already posted.
+    - cron: "20 21 * * *"
     - cron: "30 21 * * *"
+    - cron: "45 21 * * *"
+    - cron: "0 22 * * *"
   workflow_dispatch:
 
 permissions:
