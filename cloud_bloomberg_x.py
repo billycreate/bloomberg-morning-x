@@ -14,9 +14,12 @@ import urllib.request
 
 
 X_SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
+X_USERS_BY_USERNAME_URL = "https://api.x.com/2/users/by/username"
 X_POST_URL = "https://api.x.com/2/tweets"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5-mini"
+POST_USER_NAME = "to_be_a_BILLAR"
+MAX_POST_CHARS = 190
 
 
 def required_env(name):
@@ -41,6 +44,10 @@ def request_json(url, headers=None, data=None, method=None):
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"HTTP {e.code} from {url}: {detail[:800]}") from e
+
+
+def bearer_headers():
+    return {"Authorization": f"Bearer {required_env('X_BEARER_TOKEN')}"}
 
 
 def fetch_text(url):
@@ -71,7 +78,6 @@ def normalize_article_url(url):
 
 
 def search_bloomberg_tweet():
-    bearer = required_env("X_BEARER_TOKEN")
     query = '(from:BloombergJapan "今朝の5本") OR (from:BloombergJapan "今朝の５本") -is:retweet'
     params = urllib.parse.urlencode(
         {
@@ -81,10 +87,7 @@ def search_bloomberg_tweet():
             "expansions": "author_id",
         }
     )
-    data = request_json(
-        f"{X_SEARCH_URL}?{params}",
-        headers={"Authorization": f"Bearer {bearer}"},
-    )
+    data = request_json(f"{X_SEARCH_URL}?{params}", headers=bearer_headers())
     tweets = data.get("data", [])
     if not tweets:
         raise RuntimeError("No recent BloombergJapan 今朝の5本 tweet was found.")
@@ -99,10 +102,7 @@ def search_bloomberg_tweet():
 
 
 def extract_article_text(url):
-    urls_to_try = [
-        url,
-        "https://r.jina.ai/" + url,
-    ]
+    urls_to_try = [url, "https://r.jina.ai/" + url]
     for candidate in urls_to_try:
         try:
             text = fetch_text(candidate)
@@ -119,16 +119,14 @@ def extract_article_text(url):
 
 
 def openai_text(prompt):
-    api_key = required_env("OPENAI_API_KEY")
-    model = os.environ.get("OPENAI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
     data = request_json(
         OPENAI_RESPONSES_URL,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {required_env('OPENAI_API_KEY')}",
             "Content-Type": "application/json",
         },
         data={
-            "model": model,
+            "model": os.environ.get("OPENAI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL,
             "input": prompt,
             "max_output_tokens": 500,
         },
@@ -143,10 +141,7 @@ def openai_text(prompt):
                 chunks.append(content.get("text", ""))
     text = "".join(chunks).strip()
     if not text:
-        raise RuntimeError(
-            "OpenAI returned no text. Response keys: "
-            + ", ".join(sorted(data.keys()))
-        )
+        raise RuntimeError("OpenAI returned no text.")
     return text
 
 
@@ -155,14 +150,14 @@ def make_post(tweet, article_url, article_text):
 Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X投稿文を日本語で1つ作ってください。
 
 必須条件:
-- 120文字以内
 - 先頭は必ず「【サラリーマン必見】」
 - 5項目の短いニュース要約を番号付きで入れる
-- 市場示唆は必ず2行で「↑↑〇〇」「↓↓〇〇」の形式
+- 市場示唆、注目分野、↑↓行は入れない
 - 断定しすぎない
 - Bloomberg記事URLを最後に入れる
 - 記事本文の長い引用はしない
 - 余計な説明や引用符は出さず、投稿文だけ返す
+- URLを含めて190文字以内
 
 公式X投稿:
 {tweet.get("text", "")}
@@ -173,20 +168,23 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
 記事テキスト抜粋:
 {article_text}
 """.strip()
-    post = openai_text(prompt)
-    post = post.strip().strip('"').strip("'")
+    post = openai_text(prompt).strip().strip('"').strip("'")
     if article_url not in post:
         post = post.rstrip() + "\n" + article_url
     if not post.startswith("【サラリーマン必見】"):
         post = "【サラリーマン必見】" + post
-    if len(post) > 190:
+    post = "\n".join(
+        line for line in post.splitlines()
+        if not line.startswith(("↑", "↓", "↑↑", "↓↓", "注目"))
+    )
+    if len(post) > MAX_POST_CHARS:
         shorten_prompt = f"""
-次のX投稿文を120文字以内に圧縮してください。
+次のX投稿文をURL込み190文字以内に圧縮してください。
 
 必須条件:
 - 先頭は必ず「【サラリーマン必見】」
-- 番号付きニュース5項目は各20文字以内
-- 「↑↑〇〇」「↓↓〇〇」の2行を残す
+- 番号付きニュース5項目を残す
+- 市場示唆、注目分野、↑↓行は入れない
 - 最後に記事URLを残す
 - 投稿文だけ返す
 
@@ -201,22 +199,49 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
             post = post.rstrip() + "\n" + article_url
         if not post.startswith("【サラリーマン必見】"):
             post = "【サラリーマン必見】" + post
-    if len(post) > 190:
+    if len(post) > MAX_POST_CHARS:
         lines = post.splitlines()
-        url = article_url
         body_lines = [line for line in lines if "bloomberg.com" not in line]
         compact = []
         for line in body_lines:
-            if re.match(r"^\d+\.", line):
-                compact.append(line[:22])
-            elif line.startswith(("↑↑", "↓↓")):
-                compact.append(line[:24])
-            elif line.startswith("【サラリーマン必見】"):
+            if line.startswith("【サラリーマン必見】"):
                 compact.append("【サラリーマン必見】")
-        post = "\n".join(compact + [url])
-    if len(post) > 190:
+            elif re.match(r"^\d+\.", line):
+                compact.append(line[:22])
+        post = "\n".join(compact[:6] + [article_url])
+    if len(post) > MAX_POST_CHARS:
         raise RuntimeError(f"Generated post is too long after shortening: {len(post)} characters\n{post}")
     return post
+
+
+def user_timeline(username):
+    user = request_json(f"{X_USERS_BY_USERNAME_URL}/{username}", headers=bearer_headers())
+    user_id = user.get("data", {}).get("id")
+    if not user_id:
+        return []
+    params = urllib.parse.urlencode(
+        {
+            "max_results": "20",
+            "tweet.fields": "created_at,entities",
+            "exclude": "retweets,replies",
+        }
+    )
+    data = request_json(f"https://api.x.com/2/users/{user_id}/tweets?{params}", headers=bearer_headers())
+    return data.get("data", []) or []
+
+
+def already_posted(article_url):
+    target = normalize_article_url(article_url)
+    try:
+        for tweet in user_timeline(POST_USER_NAME):
+            for item in tweet.get("entities", {}).get("urls", []) or []:
+                candidate = item.get("unwound_url") or item.get("expanded_url") or item.get("url") or ""
+                if normalize_article_url(candidate) == target:
+                    print(f"Already posted article URL in tweet {tweet.get('id')}; skipping.")
+                    return True
+    except Exception as exc:
+        print(f"Duplicate check failed; continuing: {exc}")
+    return False
 
 
 def percent(value):
@@ -274,6 +299,8 @@ def post_to_x(text):
 
 def main():
     tweet, article_url = search_bloomberg_tweet()
+    if already_posted(article_url):
+        return
     article_text = extract_article_text(article_url)
     if not article_text:
         article_text = tweet.get("text", "")
