@@ -19,7 +19,8 @@ X_POST_URL = "https://api.x.com/2/tweets"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5-mini"
 POST_USER_NAME = "to_be_a_BILLAR"
-MAX_POST_CHARS = 190
+MAX_PARENT_CHARS = 190
+MAX_REPLY_CHARS = 180
 
 
 def required_env(name):
@@ -118,7 +119,7 @@ def extract_article_text(url):
     return ""
 
 
-def openai_text(prompt):
+def openai_text(prompt, max_output_tokens=500):
     data = request_json(
         OPENAI_RESPONSES_URL,
         headers={
@@ -128,7 +129,7 @@ def openai_text(prompt):
         data={
             "model": os.environ.get("OPENAI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL,
             "input": prompt,
-            "max_output_tokens": 500,
+            "max_output_tokens": max_output_tokens,
         },
     )
     if data.get("output_text"):
@@ -143,6 +144,10 @@ def openai_text(prompt):
     if not text:
         raise RuntimeError("OpenAI returned no text.")
     return text
+
+
+def strip_quotes(text):
+    return text.strip().strip('"').strip("'").strip()
 
 
 def make_post(tweet, article_url, article_text):
@@ -168,7 +173,7 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
 記事テキスト抜粋:
 {article_text}
 """.strip()
-    post = openai_text(prompt).strip().strip('"').strip("'")
+    post = strip_quotes(openai_text(prompt))
     if article_url not in post:
         post = post.rstrip() + "\n" + article_url
     if not post.startswith("【サラリーマン必見】"):
@@ -177,7 +182,7 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
         line for line in post.splitlines()
         if not line.startswith(("↑", "↓", "↑↑", "↓↓", "注目"))
     )
-    if len(post) > MAX_POST_CHARS:
+    if len(post) > MAX_PARENT_CHARS:
         shorten_prompt = f"""
 次のX投稿文をURL込み190文字以内に圧縮してください。
 
@@ -194,12 +199,12 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
 元の投稿文:
 {post}
 """.strip()
-        post = openai_text(shorten_prompt).strip().strip('"').strip("'")
+        post = strip_quotes(openai_text(shorten_prompt))
         if article_url not in post:
             post = post.rstrip() + "\n" + article_url
         if not post.startswith("【サラリーマン必見】"):
             post = "【サラリーマン必見】" + post
-    if len(post) > MAX_POST_CHARS:
+    if len(post) > MAX_PARENT_CHARS:
         lines = post.splitlines()
         body_lines = [line for line in lines if "bloomberg.com" not in line]
         compact = []
@@ -209,9 +214,58 @@ Bloomberg日本語公式Xアカウントの投稿と記事情報をもとに、X
             elif re.match(r"^\d+\.", line):
                 compact.append(line[:22])
         post = "\n".join(compact[:6] + [article_url])
-    if len(post) > MAX_POST_CHARS:
+    if len(post) > MAX_PARENT_CHARS:
         raise RuntimeError(f"Generated post is too long after shortening: {len(post)} characters\n{post}")
     return post
+
+
+def make_reply(tweet, article_url, article_text):
+    prompt = f"""
+Bloomberg記事の内容から、親投稿への返信用に日本語の短い相場コメントを1つ作ってください。
+
+必須条件:
+- 先頭は必ず「注目分野」
+- 2行だけ入れる
+- 1行目は必ず「↑↑」で始め、記事内容から上昇・追い風になりそうな資産、業種、テーマを2〜4個挙げる
+- 2行目は必ず「↓↓」で始め、記事内容から下落・逆風になりそうな資産、業種、テーマを2〜4個挙げる
+- 各行に短い理由を添える
+- 投資助言ではなく、材料整理として断定しすぎない
+- URLは入れない
+- 180文字以内
+- 返信文だけ返す
+
+公式X投稿:
+{tweet.get("text", "")}
+
+記事URL:
+{article_url}
+
+記事テキスト抜粋:
+{article_text}
+""".strip()
+    reply = strip_quotes(openai_text(prompt, max_output_tokens=300))
+    if not reply.startswith("注目分野"):
+        reply = "注目分野\n" + reply
+    if "↑↑" not in reply or "↓↓" not in reply:
+        repair_prompt = f"""
+次の返信文を指定形式に直してください。返信文だけ返してください。
+
+形式:
+注目分野
+↑↑ 上昇・追い風候補を2〜4個、短い理由
+↓↓ 下落・逆風候補を2〜4個、短い理由
+
+180文字以内。URLなし。
+
+元の返信文:
+{reply}
+""".strip()
+        reply = strip_quotes(openai_text(repair_prompt, max_output_tokens=250))
+        if not reply.startswith("注目分野"):
+            reply = "注目分野\n" + reply
+    if len(reply) > MAX_REPLY_CHARS:
+        reply = reply[:MAX_REPLY_CHARS].rstrip(" 、。,\n")
+    return reply
 
 
 def user_timeline(username):
@@ -271,8 +325,11 @@ def oauth_header(method, url, consumer_key, consumer_secret, token, token_secret
     )
 
 
-def post_to_x(text):
-    body = json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")
+def post_to_x(text, reply_to=None):
+    payload = {"text": text}
+    if reply_to:
+        payload["reply"] = {"in_reply_to_tweet_id": reply_to}
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         X_POST_URL,
         data=body,
@@ -291,7 +348,12 @@ def post_to_x(text):
     )
     try:
         with urllib.request.urlopen(req, timeout=45) as res:
-            print(res.read().decode("utf-8"))
+            data = json.loads(res.read().decode("utf-8"))
+            print(json.dumps(data, ensure_ascii=False))
+            tweet_id = data.get("data", {}).get("id")
+            if not tweet_id:
+                raise RuntimeError("X post response did not include a tweet id.")
+            return tweet_id
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"X post failed: HTTP {e.code}: {detail[:800]}") from e
@@ -312,12 +374,16 @@ def main():
     if not article_text:
         article_text = tweet.get("text", "")
     post = make_post(tweet, article_url, article_text)
+    reply = make_reply(tweet, article_url, article_text)
     print("Generated post:")
     print(post)
+    print("Generated reply:")
+    print(reply)
     if os.environ.get("DRY_RUN") == "1":
-        print("DRY_RUN=1, so the post was not sent.")
+        print("DRY_RUN=1, so the posts were not sent.")
         return
-    post_to_x(post)
+    parent_id = post_to_x(post)
+    post_to_x(reply, reply_to=parent_id)
 
 
 if __name__ == "__main__":
