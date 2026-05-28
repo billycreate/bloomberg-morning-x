@@ -1,0 +1,39 @@
+name: Test X Post
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Post test tweet
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_KEY_SECRET: ${{ secrets.X_API_KEY_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: |
+          python - <<'PY'
+          import datetime
+          from cloud_bloomberg_x import post_to_x
+
+          now = datetime.datetime.now(
+              datetime.timezone(datetime.timedelta(hours=9))
+          ).strftime("%Y-%m-%d %H:%M JST")
+          text = f"【テスト投稿】CodexからX投稿テスト。OAuth投稿経路の確認です。{now}"
+          print(text)
+          post_to_x(text)
+          PY
