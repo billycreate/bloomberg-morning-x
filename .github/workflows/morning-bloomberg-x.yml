@@ -2,11 +2,9 @@ name: Morning Bloomberg X
 
 on:
   schedule:
-    # Morning JST retries. The script skips when the article URL was already posted.
-    - cron: "20 21 * * *"
-    - cron: "30 21 * * *"
-    - cron: "45 21 * * *"
-    - cron: "0 22 * * *"
+    # GitHub schedule can delay/drop individual runs, so wake often and let the
+    # script itself post only during the JST morning window.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
