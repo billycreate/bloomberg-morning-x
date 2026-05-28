@@ -19,21 +19,30 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Post test tweet
+      - name: Post summary test tweet
         env:
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_KEY_SECRET: ${{ secrets.X_API_KEY_SECRET }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
         run: |
           python - <<'PY'
-          import datetime
-          from cloud_bloomberg_x import post_to_x
+          from cloud_bloomberg_x import (
+              extract_article_text,
+              make_post,
+              post_to_x,
+              search_bloomberg_tweet,
+          )
 
-          now = datetime.datetime.now(
-              datetime.timezone(datetime.timedelta(hours=9))
-          ).strftime("%Y-%m-%d %H:%M JST")
-          text = f"【テスト投稿】CodexからX投稿テスト。OAuth投稿経路の確認です。{now}"
+          tweet, article_url = search_bloomberg_tweet()
+          article_text = extract_article_text(article_url) or tweet.get("text", "")
+          text = make_post(tweet, article_url, article_text)
+          text = "【要約テスト】\n" + text
+          if len(text) > 260:
+              text = text[:250].rstrip() + "\n" + article_url
           print(text)
           post_to_x(text)
           PY
