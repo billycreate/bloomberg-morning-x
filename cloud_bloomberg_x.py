@@ -8,7 +8,6 @@ import random
 import re
 import sys
 import time
-from datetime import datetime, timezone, timedelta
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,9 +20,6 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5-mini"
 POST_USER_NAME = "to_be_a_BILLAR"
 MAX_POST_CHARS = 190
-JST = timezone(timedelta(hours=9))
-MORNING_START_HOUR = 6
-MORNING_END_HOUR = 9
 
 
 def required_env(name):
@@ -301,31 +297,11 @@ def post_to_x(text):
         raise RuntimeError(f"X post failed: HTTP {e.code}: {detail[:800]}") from e
 
 
-def is_scheduled_event():
-    return os.environ.get("GITHUB_EVENT_NAME") == "schedule"
-
-
-def in_morning_window():
-    now = datetime.now(JST)
-    return MORNING_START_HOUR <= now.hour < MORNING_END_HOUR
-
-
-def should_skip_for_time_window():
-    if os.environ.get("FORCE_POST") == "1":
-        return False
-    return is_scheduled_event() and not in_morning_window()
-
-
 def main():
-    if should_skip_for_time_window():
-        now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z")
-        print(f"Outside JST morning post window ({now}); skipping.")
-        return
-
     try:
         tweet, article_url = search_bloomberg_tweet()
     except RuntimeError as exc:
-        if is_scheduled_event() and "No recent BloombergJapan" in str(exc):
+        if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and "No recent BloombergJapan" in str(exc):
             print(f"Bloomberg morning tweet is not available yet; skipping: {exc}")
             return
         raise
