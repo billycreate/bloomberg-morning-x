@@ -17,6 +17,9 @@ X_SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
 X_USERS_BY_USERNAME_URL = "https://api.x.com/2/users/by/username"
 X_POST_URL = "https://api.x.com/2/tweets"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+WEB_SEARCH_URL = "https://www.bing.com/search?q=" + urllib.parse.quote(
+    "site:bloomberg.co.jp/news/articles OR site:bloomberg.com/jp/news/articles 今朝の5本"
+)
 DEFAULT_MODEL = "gpt-5-mini"
 POST_USER_NAME = "to_be_a_BILLAR"
 MAX_PARENT_CHARS = 190
@@ -100,6 +103,21 @@ def search_bloomberg_tweet():
         if candidate:
             return tweet, normalize_article_url(expand_url(candidate))
     raise RuntimeError("Bloomberg tweet was found, but it had no URL entity.")
+
+
+def find_bloomberg_article_from_web():
+    """Fall back to Bloomberg's article URL when the X recent-search index lags."""
+    page = fetch_text(WEB_SEARCH_URL)
+    matches = re.findall(
+        r"https://www\\.bloomberg(?:\\.co\\.jp|\\.com/jp)/news/articles/[A-Z0-9]+",
+        page,
+    )
+    for candidate in matches:
+        normalized = normalize_article_url(candidate)
+        if normalized:
+            print(f"Using web-search fallback article URL: {normalized}")
+            return {"text": "Bloomberg 今朝の5本"}, normalized
+    raise RuntimeError("No Bloomberg morning article URL was found in web-search fallback.")
 
 
 def extract_article_text(url):
@@ -363,10 +381,10 @@ def main():
     try:
         tweet, article_url = search_bloomberg_tweet()
     except RuntimeError as exc:
-        if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and "No recent BloombergJapan" in str(exc):
-            print(f"Bloomberg morning tweet is not available yet; skipping: {exc}")
-            return
-        raise
+        if "No recent BloombergJapan" not in str(exc):
+            raise
+        print(f"X recent search has no Bloomberg morning tweet; trying article fallback: {exc}")
+        tweet, article_url = find_bloomberg_article_from_web()
 
     if already_posted(article_url):
         return
