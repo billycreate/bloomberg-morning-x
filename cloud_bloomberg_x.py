@@ -82,27 +82,31 @@ def normalize_article_url(url):
 
 
 def search_bloomberg_tweet():
-    query = '(from:BloombergJapan "今朝の5本") OR (from:BloombergJapan "今朝の５本") -is:retweet'
-    params = urllib.parse.urlencode(
-        {
-            "query": query,
-            "max_results": "10",
-            "tweet.fields": "created_at,entities",
-            "expansions": "author_id",
-        }
-    )
-    data = request_json(f"{X_SEARCH_URL}?{params}", headers=bearer_headers())
-    tweets = data.get("data", [])
-    if not tweets:
-        raise RuntimeError("No recent BloombergJapan 今朝の5本 tweet was found.")
+    def search(query):
+        params = urllib.parse.urlencode(
+            {
+                "query": query,
+                "max_results": "100",
+                "tweet.fields": "created_at,entities",
+            }
+        )
+        return request_json(f"{X_SEARCH_URL}?{params}", headers=bearer_headers()).get("data", [])
 
-    tweet = sorted(tweets, key=lambda item: item.get("created_at", ""), reverse=True)[0]
-    urls = tweet.get("entities", {}).get("urls", [])
-    for item in urls:
-        candidate = item.get("unwound_url") or item.get("expanded_url") or item.get("url")
-        if candidate:
-            return tweet, normalize_article_url(expand_url(candidate))
-    raise RuntimeError("Bloomberg tweet was found, but it had no URL entity.")
+    tweets = search('(from:BloombergJapan "今朝の5本") OR (from:BloombergJapan "今朝の５本") -is:retweet')
+    if not tweets:
+        # X search does not consistently preserve Japanese phrase matches. Search the
+        # same account broadly, then select its newest morning-news post locally.
+        tweets = [
+            tweet for tweet in search("from:BloombergJapan -is:retweet")
+            if "今朝" in tweet.get("text", "") and "本" in tweet.get("text", "")
+        ]
+
+    for tweet in sorted(tweets, key=lambda item: item.get("created_at", ""), reverse=True):
+        for item in tweet.get("entities", {}).get("urls", []):
+            candidate = item.get("unwound_url") or item.get("expanded_url") or item.get("url")
+            if candidate:
+                return tweet, normalize_article_url(expand_url(candidate))
+    raise RuntimeError("No recent BloombergJapan 今朝の5本 tweet with an article URL was found.")
 
 
 def find_bloomberg_article_from_web():
