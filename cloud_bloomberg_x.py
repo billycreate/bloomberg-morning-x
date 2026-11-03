@@ -109,7 +109,7 @@ def find_bloomberg_article_from_web():
     """Fall back to Bloomberg's article URL when the X recent-search index lags."""
     page = fetch_text(WEB_SEARCH_URL)
     matches = re.findall(
-        r"https://www\\.bloomberg(?:\\.co\\.jp|\\.com/jp)/news/articles/[A-Z0-9]+",
+        r"https://www\\.bloomberg(?:\\.co\\.jp|\\.com(?:/jp)?)/news/articles/[A-Za-z0-9_-]+",
         page,
     )
     for candidate in matches:
